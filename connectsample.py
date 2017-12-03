@@ -12,6 +12,7 @@ import uuid
 import requests
 from flask import Flask, redirect, url_for, session, request, render_template
 from flask_oauthlib.client import OAuth
+import msgraph
 
 # read private credentials from text file
 client_id, client_secret, *_ = open('_PRIVATE.txt').read().split('\n')
@@ -33,7 +34,7 @@ msgraphapi = oauth.remote_app( \
     'microsoft',
     consumer_key=client_id,
     consumer_secret=client_secret,
-    request_token_params={'scope': 'User.Read Mail.Send'},
+    request_token_params={'scope': 'User.Read Mail.Send Files.Read Files.ReadWrite'},
     base_url='https://graph.microsoft.com/v1.0/',
     request_token_url=None,
     access_token_method='POST',
@@ -48,6 +49,7 @@ def index():
 
 @app.route('/login')
 def login():
+    print('*** Login')
     """Handler for login route."""
     guid = uuid.uuid4() # guid used to only accept initiated logins
     session['state'] = guid
@@ -62,8 +64,11 @@ def logout():
 
 @app.route('/login/authorized')
 def authorized():
+    print('*** Authorized')
     """Handler for login/authorized route."""
     response = msgraphapi.authorized_response()
+
+    print('*** Got response')
 
     if response is None:
         return "Access Denied: Reason={0}\nError={1}".format( \
@@ -72,6 +77,8 @@ def authorized():
     # Check response for state
     if str(session['state']) != str(request.args['state']):
         raise Exception('State has been messed with, end authentication')
+
+    print('*** Reset state')
     session['state'] = '' # reset session state to prevent re-use
 
     # Okay to store this in a local variable, encrypt if it's going to client
@@ -114,6 +121,69 @@ def send_mail():
     return render_template('main.html', name=session['alias'],
                            emailAddress=email_address, showSuccess=show_success,
                            showError=show_error)
+
+@app.route('/get_folders')
+def get_folders():
+    
+    get_drive(session['access_token'])
+    # response = get_folders_graph_api(session['access_token'])
+
+    # if response == 'SUCCESS':
+    #     print('success')
+    # else:
+    #     print('failed')
+
+
+def get_drive(access_token):
+    url = 'https://graph.microsoft.com/v1.0/me/drive'            
+
+    headers = {'User-Agent' : 'python_tutorial/1.0',
+               'Authorization' : 'Bearer {0}'.format(access_token),
+               'Accept' : 'application/json',
+               'Content-Type' : 'application/json'}
+
+    request_id = str(uuid.uuid4())
+    instrumentation = {'client-request-id' : request_id,
+                       'return-client-request-id' : 'true'}
+    headers.update(instrumentation)
+
+    try:
+        response = requests.post(url=url,
+                             headers=headers,
+                             data=None,
+                             verify=False,
+                             params=None)
+
+        print(response.status_code)
+    except requests.exceptions.RequestException as e:
+        print(e)
+    sys.exit(1)
+
+def get_folders_graph_api(access_token):
+    url = 'https://graph.microsoft.com/v1.0/me/drive/root/children'
+
+	# set request headers
+    headers = {'User-Agent' : 'python_tutorial/1.0',
+               'Authorization' : 'Bearer {0}'.format(access_token),
+               'Accept' : 'application/json',
+               'Content-Type' : 'application/json'}
+
+	# Use these headers to instrument calls. Makes it easier to correlate
+    # requests and responses in case of problems and is a recommended best
+    # practice.
+    request_id = str(uuid.uuid4())
+    instrumentation = {'client-request-id' : request_id,
+                       'return-client-request-id' : 'true'}
+    headers.update(instrumentation)
+
+    response = requests.get(url=url, headers=headers, params=None)
+
+    if response:
+        if response.ok:
+            print(response)
+            return 'SUCCESS'
+        else:
+            return '{0}: {1}'.format(response.status_code, response.text)
 
 # If library is having trouble with refresh, uncomment below and implement
 # refresh handler see https://github.com/lepture/flask-oauthlib/issues/160 for
