@@ -83,19 +83,19 @@
   <div class="ms-Grid-col ms-u-mdPush1 ms-u-md9 ms-u-lgPush1 ms-u-lg6">
     <div>
       <h2 class="ms-font-xxl ms-fontWeight-semibold">Hi, {{ name }}!</h2>
-      <p class="ms-font-xl">You're now connected to Office 365. Click the button below to send a message from your account using the Microsoft Graph API. </p>
+      <p class="ms-font-xl">You're now connected to Office 365. Click the button below to view your OneDrive contents. </p>
       <form action="/get_folders">
         <div class="icon-holder">
-          <input type="submit" value="Send mail">
+          <input type="submit" value="Load Folders">
         </div>
       </form>
       {% if showSuccess == 'true' %}
       <div>
-        <p class="ms-font-m ms-fontColor-green">Successfully sent an email to!</p>
+        <p class="ms-font-m ms-fontColor-green">Successfully Loaded folders & files!</p>
       </div>
       {% elif showError == 'true' %}
       <div>
-        <p class="ms-font-m ms-fontColor-redDark">Something went wrong, couldn't send an email.</p>        
+        <p class="ms-font-m ms-fontColor-redDark">Something went wrong.</p>        
       </div>
       {% endif %}
     </div>

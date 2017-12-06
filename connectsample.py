@@ -34,7 +34,7 @@ msgraphapi = oauth.remote_app( \
     'microsoft',
     consumer_key=client_id,
     consumer_secret=client_secret,
-    request_token_params={'scope': 'User.Read Mail.Send Files.Read Files.ReadWrite'},
+    request_token_params={'scope': 'User.Read Mail.Send Files.Read'},
     base_url='https://graph.microsoft.com/v1.0/',
     request_token_url=None,
     access_token_method='POST',
@@ -124,66 +124,61 @@ def send_mail():
 
 @app.route('/get_folders')
 def get_folders():
+    print('get_folders')
+    email_address = 'dries.cronje@outlook.com'
     
-    get_drive(session['access_token'])
-    # response = get_folders_graph_api(session['access_token'])
+    data = get_drive_items(session['access_token'])
 
-    # if response == 'SUCCESS':
-    #     print('success')
-    # else:
-    #     print('failed')
+    if data:
+        show_success = 'true'
+        show_error = 'false'
+    else:
+        show_success = 'false'
+        show_error = 'true'
 
+    session['pageRefresh'] = 'false'
+    return render_template('main.html', name=session['alias'],
+                           emailAddress=email_address, showSuccess=show_success,
+                           showError=show_error)
 
-def get_drive(access_token):
-    url = 'https://graph.microsoft.com/v1.0/me/drive'            
+def get_drive_items(access_token):
+    print('get_drive')
+
+    url = 'https://graph.microsoft.com/v1.0/me/drive/root/children'            
 
     headers = {'User-Agent' : 'python_tutorial/1.0',
                'Authorization' : 'Bearer {0}'.format(access_token),
                'Accept' : 'application/json',
                'Content-Type' : 'application/json'}
+    #headers = {'Authorization' : 'Bearer {0}'.format(access_token),
+    #           'Accept' : 'application/json'}
 
-    request_id = str(uuid.uuid4())
-    instrumentation = {'client-request-id' : request_id,
-                       'return-client-request-id' : 'true'}
-    headers.update(instrumentation)
-
+    files = []
+    folders = []
     try:
-        response = requests.post(url=url,
-                             headers=headers,
-                             data=None,
-                             verify=False,
-                             params=None)
-
+        response = requests.get(url=url, headers=headers)
+        print('***Status: ')
         print(response.status_code)
+        print('\r\n***Response: ')
+        #print(response.json())
+
+        data = response.json()
+        for item in data['value']:
+            print('\r\n**** ITEM ****\r\n')
+            print(item['name'])
+            print(item['parentReference']['path'])
+            print(item['webUrl'])
+            if 'file' in item:
+                print(item['file']['mimeType'])
+            else:
+                print('FOLDER')
+
+        return data['value']
+
+
     except requests.exceptions.RequestException as e:
         print(e)
-    sys.exit(1)
-
-def get_folders_graph_api(access_token):
-    url = 'https://graph.microsoft.com/v1.0/me/drive/root/children'
-
-	# set request headers
-    headers = {'User-Agent' : 'python_tutorial/1.0',
-               'Authorization' : 'Bearer {0}'.format(access_token),
-               'Accept' : 'application/json',
-               'Content-Type' : 'application/json'}
-
-	# Use these headers to instrument calls. Makes it easier to correlate
-    # requests and responses in case of problems and is a recommended best
-    # practice.
-    request_id = str(uuid.uuid4())
-    instrumentation = {'client-request-id' : request_id,
-                       'return-client-request-id' : 'true'}
-    headers.update(instrumentation)
-
-    response = requests.get(url=url, headers=headers, params=None)
-
-    if response:
-        if response.ok:
-            print(response)
-            return 'SUCCESS'
-        else:
-            return '{0}: {1}'.format(response.status_code, response.text)
+        sys.exit(1)
 
 # If library is having trouble with refresh, uncomment below and implement
 # refresh handler see https://github.com/lepture/flask-oauthlib/issues/160 for
@@ -194,40 +189,3 @@ def get_folders_graph_api(access_token):
 def get_token():
     """Return the Oauth token."""
     return session.get('microsoft_token')
-
-def call_sendmail_endpoint(access_token, name, email_address):
-    """Call the resource URL for the sendMail action."""
-    send_mail_url = 'https://graph.microsoft.com/v1.0/me/microsoft.graph.sendMail'
-
-	# set request headers
-    headers = {'User-Agent' : 'python_tutorial/1.0',
-               'Authorization' : 'Bearer {0}'.format(access_token),
-               'Accept' : 'application/json',
-               'Content-Type' : 'application/json'}
-
-	# Use these headers to instrument calls. Makes it easier to correlate
-    # requests and responses in case of problems and is a recommended best
-    # practice.
-    request_id = str(uuid.uuid4())
-    instrumentation = {'client-request-id' : request_id,
-                       'return-client-request-id' : 'true'}
-    headers.update(instrumentation)
-
-	# Create the email that is to be sent via the Graph API
-    email = {'Message': {'Subject': 'Welcome to the Microsoft Graph Connect sample for Python',
-                         'Body': {'ContentType': 'HTML',
-                                  'Content': render_template('email.html', name=name)},
-                         'ToRecipients': [{'EmailAddress': {'Address': email_address}}]
-                        },
-             'SaveToSentItems': 'true'}
-
-    response = requests.post(url=send_mail_url,
-                             headers=headers,
-                             data=json.dumps(email),
-                             verify=False,
-                             params=None)
-
-    if response.ok:
-        return 'SUCCESS'
-    else:
-        return '{0}: {1}'.format(response.status_code, response.text)
