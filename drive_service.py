@@ -1,20 +1,12 @@
-# Copyright (c) Microsoft. All rights reserved. Licensed under the MIT license.
-# See LICENSE in the project root for license information.
-"""Main program for Microsoft Graph API Connect demo."""
 import json
 import sys
 import uuid
-
-# un-comment these lines to suppress the HTTP status messages sent to the console
-#import logging
-#logging.getLogger('werkzeug').setLevel(logging.ERROR)
-
 import requests
-from flask import Flask, redirect, url_for, session, request, render_template
+from flask import Flask, redirect, url_for, session, request, render_template, jsonify
 from flask_oauthlib.client import OAuth
 import msgraph
+from drive import FileItem
 
-# read private credentials from text file
 client_id, client_secret, *_ = open('_PRIVATE.txt').read().split('\n')
 if (client_id.startswith('*') and client_id.endswith('*')) or \
     (client_secret.startswith('*') and client_secret.endswith('*')):
@@ -22,6 +14,8 @@ if (client_id.startswith('*') and client_id.endswith('*')) or \
         'to add client ID and secret.')
     sys.exit(1)
 
+
+# Create Flask instance
 app = Flask(__name__)
 app.debug = True
 app.secret_key = 'development'
@@ -84,7 +78,6 @@ def authorized():
     # Okay to store this in a local variable, encrypt if it's going to client
     # machine or database. Treat as a password.
     session['microsoft_token'] = (response['access_token'], '')
-    
     # Store the token in another session variable for easy access
     session['access_token'] = response['access_token']
     me_response = msgraphapi.get('me')
@@ -96,91 +89,59 @@ def authorized():
 
     return redirect('main')
 
-@app.route('/main')
-def main():
-    """Handler for main route."""
-    if session['alias']:
-        username = session['alias']
-        email_address = session['userEmailAddress']
-        return render_template('main.html', name=username, emailAddress=email_address)
-    else:
-        return render_template('main.html')
-
-@app.route('/send_mail')
-def send_mail():
-    """Handler for send_mail route."""
-    email_address = request.args.get('emailAddress') # get email address from the form
-    response = call_sendmail_endpoint(session['access_token'], session['alias'], email_address)
-    if response == 'SUCCESS':
-        show_success = 'true'
-        show_error = 'false'
-    else:
-        print(response)
-        show_success = 'false'
-        show_error = 'true'
-
-    session['pageRefresh'] = 'false'
-    return render_template('main.html', name=session['alias'],
-                           emailAddress=email_address, showSuccess=show_success,
-                           showError=show_error)
-
-@app.route('/get_folders')
-def get_folders():
-    print('get_folders')
-    email_address = 'dries.cronje@outlook.com'
+@app.route('/items')
+def get_items():
+    print('/items')
     
-    data = get_drive_items(session['access_token'])
+    url = 'https://graph.microsoft.com/v1.0/me/drive/root/children' 
+    _id = '511F789DEE892FBD!47017'           
+    url2 = get_url(_id)    
+    items = get_drive_items(session['access_token'], url2)
 
-    if data:
-        show_success = 'true'
-        show_error = 'false'
-    else:
-        show_success = 'false'
-        show_error = 'true'
+    return jsonify({'value' : [x.serialize() for x in items], 'code' : 200})
 
-    session['pageRefresh'] = 'false'
-    return render_template('main.html', name=session['alias'],
-                           emailAddress=email_address, showSuccess=show_success,
-                           showError=show_error)
-
-def get_drive_items(access_token):
-    print('get_drive')
-
-    url = 'https://graph.microsoft.com/v1.0/me/drive/root/children'            
+def get_drive_items(access_token, drive_url):
+    print('get_drive_items')
 
     headers = {'User-Agent' : 'python_tutorial/1.0',
                'Authorization' : 'Bearer {0}'.format(access_token),
                'Accept' : 'application/json',
                'Content-Type' : 'application/json'}
-    #headers = {'Authorization' : 'Bearer {0}'.format(access_token),
-    #           'Accept' : 'application/json'}
 
     files = []
-    folders = []
     try:
-        response = requests.get(url=url, headers=headers)
-        print('***Status: ')
+        response = requests.get(url=drive_url, headers=headers)
         print(response.status_code)
         print('\r\n***Response: ')
-        #print(response.json())
 
         data = response.json()
         for item in data['value']:
-            print('\r\n**** ITEM ****\r\n')
-            print(item['name'])
-            print(item['parentReference']['path'])
-            print(item['webUrl'])
+            print('\n\n{}'.format(item))
+            #tags = item['parentReference']['name']
+            tags = get_tags(item['parentReference']['path'])
             if 'file' in item:
-                print(item['file']['mimeType'])
+                files.append(
+                    FileItem(
+                        item['id'],
+                        item['name'], 
+                        item['createdBy']['user']['displayName'],
+                        item['createdDateTime'], 
+                        'summary here',
+                        item['file']['mimeType'],
+                        [tags]))
             else:
-                print('FOLDER')
+                _id = item['id']
+                _files = get_drive_items(access_token, get_url(_id))
+                for _f in _files:
+                    files.append(_f)
 
-        return data['value']
+        return files
 
 
     except requests.exceptions.RequestException as e:
         print(e)
         sys.exit(1)
+
 
 # If library is having trouble with refresh, uncomment below and implement
 # refresh handler see https://github.com/lepture/flask-oauthlib/issues/160 for
@@ -191,3 +152,19 @@ def get_drive_items(access_token):
 def get_token():
     """Return the Oauth token."""
     return session.get('microsoft_token')
+
+def get_url(_id):
+    return 'https://graph.microsoft.com/v1.0/me/drive/items/{}/children'.format(_id)
+
+def get_tags(path):
+    tags = []
+
+    found = False
+    for t in path.split('/'):
+        if found:
+            tags.append(t)
+
+        if ':' in t:
+            found = True
+
+    return tags
